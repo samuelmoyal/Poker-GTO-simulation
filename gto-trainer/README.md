@@ -39,8 +39,8 @@ Sans torch, le serveur démarre quand même et seuls les modes « Bibliothèque 
     (`tiny_v2` par défaut, `small_v2` plus précis et plus lent), `GTO_NET_DEVICE` (`mps` ou `cpu`), `GTO_NET_ITERS`.
   - **Bibliothèque** : flop résolu en avance par le solveur exact et rangé dans `cache/flops/`.
   - **Nouveau flop, solveur exact** : résolution à la demande (~20-60 s).
-  Détail de la bibliothèque : Une même solution sert pour
-  n'importe quelle permutation de couleurs : le flop affiché est tiré au hasard dans les couleurs.
+  Une même solution de la bibliothèque sert pour n'importe quelle permutation de couleurs : le flop affiché est
+  tiré au hasard dans les couleurs.
 - **Turn et river** : résolus **à la volée** (0,1 à 1 s chacun), avec les ranges rétrécies **combo par combo** par les
   actions réellement jouées. Le résultat est mis en cache (`cache/streets/`).
 - **Le bot** joue en tirant ses actions dans la stratégie mixte du solveur pour sa main exacte.
