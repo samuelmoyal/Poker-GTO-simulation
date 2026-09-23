@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTO Trainer</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1d222a; --panel2: #252b35; --line: #323a47; --text: #e8ebf0; --muted: #8b95a5;
+    --felt: #16402f; --felt2: #0f2f23; --good: #4caf6a; --warn: #e0b040; --orange: #e08a3c; --bad: #e0524a; --accent: #5aa0ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "SF Pro Text", "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0 12px 0 0; letter-spacing: .3px; }
+  header label { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  select, button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 16px; padding: 16px 20px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .table { background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt2) 100%); border-radius: 14px; border: 1px solid #0a1f17; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 340px; }
+  .seat { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .seat .name { font-size: 12px; color: #cfe3d8; }
+  .seat .name b { color: #fff; }
+  .cards { display: flex; gap: 6px; }
+  .card { width: 46px; height: 64px; border-radius: 6px; background: #f6f6f2; color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 700; font-size: 20px; line-height: 1; box-shadow: 0 2px 4px rgba(0,0,0,.4); }
+  .card .s { font-size: 20px; margin-top: 2px; }
+  .card.back { background: repeating-linear-gradient(45deg, #2b4d8f, #2b4d8f 5px, #223f77 5px, #223f77 10px); border: 2px solid #f6f6f2; }
+  .card.empty { background: rgba(255,255,255,.06); box-shadow: none; border: 1px dashed rgba(255,255,255,.2); }
+  .card.big { width: 58px; height: 80px; font-size: 26px; }
+  .s-s { color: #1a1a1a; } .s-h { color: #d63031; } .s-d { color: #1e6fd6; } .s-c { color: #1f9d4d; }
+  .pot { color: #fff; font-size: 15px; background: rgba(0,0,0,.35); padding: 4px 14px; border-radius: 14px; }
+  .bet { font-size: 12px; color: #ffe08a; min-height: 18px; }
+  .street { color: #cfe3d8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; min-height: 44px; }
+  .actions button { padding: 10px 16px; font-weight: 600; }
+  .actions button.fold { border-color: #3d5a8a; }
+  .actions button.call, .actions button.check { border-color: #3d7a4d; }
+  .actions button.bet, .actions button.raise, .actions button.allin { border-color: #8a4b3d; }
+  .status { color: var(--muted); }
+  .status .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin-right: 8px; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result { padding: 10px 14px; border-radius: 8px; font-weight: 600; }
+  .result.win { background: rgba(76,175,106,.15); border: 1px solid var(--good); }
+  .result.lose { background: rgba(224,82,74,.13); border: 1px solid var(--bad); }
+  .result.tie { background: rgba(139,149,165,.13); border: 1px solid var(--muted); }
+  .err { color: var(--bad); padding: 8px 12px; border: 1px solid var(--bad); border-radius: 8px; background: rgba(224,82,74,.1); }
+
+  .verdict { display: inline-block; padding: 3px 10px; border-radius: 12px; font-weight: 700; font-size: 13px; }
+  .v-gto { background: rgba(76,175,106,.2); color: var(--good); }
+  .v-acceptable { background: rgba(224,176,64,.2); color: var(--warn); }
+  .v-marginal { background: rgba(224,138,60,.2); color: var(--orange); }
+  .v-erreur { background: rgba(224,82,74,.2); color: var(--bad); }
+  .freqrow { display: grid; grid-template-columns: 150px 1fr 48px; gap: 8px; align-items: center; margin: 5px 0; }
+  .freqrow .lbl { font-size: 13px; }
+  .freqrow.chosen .lbl { font-weight: 700; color: #fff; }
+  .bar { height: 14px; background: var(--panel2); border-radius: 7px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 7px; }
+  .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .tag { font-size: 11px; color: var(--muted); }
+  .stack { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 6px 0 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
+
+  .grid { display: grid; grid-template-columns: repeat(13, 1fr); gap: 1px; margin-top: 10px; max-width: 520px; }
+  .cell { aspect-ratio: 1; font-size: 9px; color: rgba(255,255,255,.85); display: flex; align-items: center; justify-content: center; border-radius: 2px; background: #171b21; position: relative; text-shadow: 0 0 2px #000; }
+  .cell.me { outline: 2px solid #fff; z-index: 2; }
+  @media (min-width: 1200px) { .cell { font-size: 10px; } }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  .log { max-height: 220px; overflow-y: auto; font-size: 13px; }
+  .log div { padding: 2px 0; border-bottom: 1px dotted var(--line); }
+  .log .hero { color: var(--accent); } .log .board { color: var(--warn); } .log .result { border: 0; padding: 2px 0; font-weight: 700; background: none; }
+  .note { color: var(--muted); font-size: 12px; }
+  details summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>♠ GTO Trainer</h1>
+  <label>Spot
+    <select id="matchup"></select>
+  </label>
+  <label>Ma position
+    <select id="hero"><option value="random">Aléatoire</option><option value="ip">En position (IP)</option><option value="oop">Hors position (OOP)</option></select>
+  </label>
+  <label>Flop
+    <select id="flopmode"><option value="cache">Bibliothèque (instantané)</option><option value="new">Nouveau flop (~2 min de calcul)</option></select>
+  </label>
+  <button id="newhand" class="primary">Nouvelle main</button>
+  <span class="note" id="library"></span>
+</header>
+
+<main>
+  <div class="col">
+    <div class="panel">
+      <div class="table" id="table"></div>
+    </div>
+    <div class="panel">
+      <h2>Ta décision</h2>
+      <div id="status" class="status"></div>
+      <div class="actions" id="actions"></div>
+    </div>
+    <div class="panel" id="feedback-panel" hidden>
+      <h2>Comparaison avec le solveur</h2>
+      <div id="feedback"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="panel">
+      <h2>Statistiques</h2>
+      <div id="stats"></div>
+    </div>
+    <div class="panel">
+      <h2>Déroulement de la main</h2>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="panel">
+      <details>
+        <summary>À propos de la précision</summary>
+        <p class="note">Le flop vient d'une bibliothèque pré-résolue (~5 % d'exploitabilité). Turn et river sont résolus à la volée avec les ranges rétrécies par les actions jouées ; le solveur n'accepte que des poids par classe de main, donc c'est une approximation. Le solveur ne fournit que des fréquences, pas d'EV : ta décision est notée selon la fréquence GTO de l'action choisie.</p>
+        <p class="note">Notes : ✅ ≥ 30 % · 🟡 10–30 % · 🟠 3–10 % · ❌ &lt; 3 %.</p>
+        <button id="resetstats">Réinitialiser les stats</button>
+      </details>
+    </div>
+  </div>
+</main>
+
+<script>
+const SUIT = { s: "♠", h: "♥", d: "♦", c: "♣" };
+const VERDICT = { gto: "✅ Action GTO", acceptable: "🟡 Acceptable (mix rare)", marginal: "🟠 Marginal", erreur: "❌ Erreur" };
+const STREET = { flop: "Flop", turn: "Turn", river: "River" };
+const AGGR = ["#f0b04f", "#e8722c", "#c0392b", "#8e2a9c"];
+const RANKS = "AKQJT98765432";
+let last = "", state = null;
+
+const $ = (id) => document.getElementById(id);
+const cardHTML = (c, big) => `<div class="card ${big ? "big" : ""}"><span>${c[0] === "T" ? "10" : c[0]}</span><span class="s s-${c[1]}">${SUIT[c[1]]}</span></div>`;
+const backHTML = () => `<div class="card back"></div>`;
+const emptyHTML = () => `<div class="card empty"></div>`;
+
+function colors(actions) {
+  let a = 0;
+  return actions.map((x) => {
+    if (x.kind === "FOLD") return "#4a90d9";
+    if (x.kind === "CHECK" || x.kind === "CALL") return "#4caf6a";
+    return AGGR[Math.min(a++, AGGR.length - 1)];
+  });
+}
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function renderTable(h) {
+  if (!h) { $("table").innerHTML = `<div class="status">Clique sur « Nouvelle main » pour commencer.</div>`; return; }
+  const board = [...h.board]; while (board.length < 5) board.push(null);
+  const vill = h.villain_cards ? h.villain_cards.map((c) => cardHTML(c)).join("") : backHTML() + backHTML();
+  const hero = h.hero_cards ? h.hero_cards.map((c) => cardHTML(c, true)).join("") : emptyHTML() + emptyHTML();
+  $("table").innerHTML = `
+    <div class="seat"><div class="name">Bot GTO · <b>${h.villain_pos}</b> ${h.hero_side === "ip" ? "(OOP)" : "(IP)"}</div><div class="cards">${vill}</div>
+      <div class="bet">${h.villain_bet_bb ? "mise : " + h.villain_bet_bb + " bb" : ""}</div></div>
+    <div class="street">${h.street ? STREET[h.street] : ""} · ${h.label}</div>
+    <div class="cards">${board.map((c) => (c ? cardHTML(c) : emptyHTML())).join("")}</div>
+    <div class="pot">Pot : ${h.pot_bb ?? "…"} bb</div>
+    <div class="seat"><div class="bet">${h.hero_bet_bb ? "ta mise : " + h.hero_bet_bb + " bb" : ""}</div><div class="cards">${hero}</div>
+      <div class="name">Toi · <b>${h.hero_pos}</b> ${h.hero_side === "ip" ? "(IP)" : "(OOP)"} · stack ${h.stack_bb ?? "…"} bb</div></div>`;
+}
+
+function renderStatus(s) {
+  const h = s.hand;
+  let html = "";
+  if (s.error) html += `<div class="err">${s.error}</div>`;
+  if (s.busy) {
+    const p = s.busy.progress;
+    html += `<div><span class="spin"></span>${s.busy.msg}${p ? ` — itération ${p.iter}${p.exploitability != null ? `, exploitabilité ${p.exploitability.toFixed(1)} % du pot` : ""}` : ""}</div>`;
+  } else if (h && h.result) {
+    const r = h.result;
+    const cls = r.hero_won === null ? "tie" : r.hero_won ? "win" : "lose";
+    const net = r.net_bb > 0 ? "+" + r.net_bb : r.net_bb;
+    html += `<div class="result ${cls}">${r.text} · pot final ${r.pot_bb} bb · résultat postflop ${net} bb${r.kind === "showdown" ? `<div class="note">Toi : ${r.hero_hand} — Bot : ${r.villain_hand}</div>` : ""}</div>`;
+  }
+  $("status").innerHTML = html;
+  const acts = h && h.actions ? h.actions : [];
+  $("actions").innerHTML = acts.map((a) => `<button class="${a.kind.toLowerCase()}" data-i="${a.index}">${a.text}</button>`).join("");
+  $("actions").querySelectorAll("button").forEach((b) => (b.onclick = () => act(+b.dataset.i)));
+}
+
+function renderFeedback(h) {
+  const fb = h && h.feedback;
+  $("feedback-panel").hidden = !fb;
+  if (!fb) return;
+  if (!fb.available) { $("feedback").innerHTML = `<div class="note">${fb.text}</div>`; return; }
+  const col = colors(fb.actions);
+  const rows = fb.actions.map((a, i) => `
+    <div class="freqrow ${i === fb.chosen ? "chosen" : ""}">
+      <div class="lbl">${a.text} ${i === fb.chosen ? "◀" : ""} ${i === fb.best ? "<span class='tag'>★ plus fréquente</span>" : ""}</div>
+      <div class="bar"><i style="width:${a.freq * 100}%;background:${col[i]}"></i></div>
+      <div class="pct">${Math.round(a.freq * 100)}%</div>
+    </div>`).join("");
+  const stack = fb.range_freqs.map((f, i) => `<i style="width:${f * 100}%;background:${col[i]}" title="${fb.actions[i].text}: ${Math.round(f * 100)}%"></i>`).join("");
+  const legend = fb.actions.map((a, i) => `<span style="--c:${col[i]}">${a.text} ${Math.round(fb.range_freqs[i] * 100)}%</span>`).join("");
+  let grid = "";
+  for (let i = 0; i < 13; i++) for (let j = 0; j < 13; j++) {
+    const r1 = RANKS[Math.min(i, j)], r2 = RANKS[Math.max(i, j)];
+    const cls = i === j ? r1 + r2 : i < j ? r1 + r2 + "s" : r1 + r2 + "o";
+    const c = fb.grid[cls];
+    let bg = "#171b21", label = cls.replace(/[so]$/, "");
+    if (c) {
+      let acc = 0;
+      const stops = c.f.map((f, k) => { const from = acc; acc += f * 100; return `${col[k]} ${from}% ${acc}%`; }).join(",");
+      bg = `linear-gradient(to right, ${stops})`;
+    }
+    const style = c ? `background:${bg};opacity:${0.35 + 0.65 * Math.min(1, c.w * 3)}` : "";
+    grid += `<div class="cell ${cls === fb.hand_class ? "me" : ""}" style="${style}" title="${cls}${c ? " — " + c.f.map((f, k) => fb.actions[k].text + " " + Math.round(f * 100) + "%").join(", ") : " (hors range)"}">${label}</div>`;
+  }
+  $("feedback").innerHTML = `
+    <div><span class="verdict v-${fb.verdict}">${VERDICT[fb.verdict]}</span>
+      <span class="note"> · ${STREET[fb.street]} · ta main <b>${fb.hand.slice(0, 2)} ${fb.hand.slice(2)}</b> (${fb.hand_class}) · pot ${fb.pot_bb} bb</span></div>
+    <h2 style="margin-top:12px">Stratégie du solveur pour ta main exacte</h2>${rows}
+    <h2 style="margin-top:14px">Ta range entière à ce point</h2>
+    <div class="stack">${stack}</div><div class="legend">${legend}</div>
+    <div class="grid">${grid}</div>
+    <div class="note" style="margin-top:6px">Chaque case = une classe de main colorée selon la stratégie ; la case blanche cerclée est ta main ; les cases ternes sont rarement dans ta range à ce stade.</div>`;
+}
+
+function renderLog(h) {
+  const log = h ? h.log : [];
+  const rows = log.map((e) => {
+    if (e.kind === "board") return `<div class="board">— ${e.text} —</div>`;
+    if (e.kind === "result") return `<div class="result">${e.text}</div>`;
+    const who = e.kind === "hero" ? "Toi" : "Bot";
+    return `<div class="${e.kind}">${STREET[e.street] || ""} · ${who} : ${e.text}</div>`;
+  });
+  $("log").innerHTML = rows.join("") || `<span class="note">—</span>`;
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function renderStats(st) {
+  if (!st.decisions) { $("stats").innerHTML = `<div class="note">Pas encore de décision enregistrée.</div>`; return; }
+  const streets = Object.entries(st.by_street).map(([k, v]) => `<tr><td>${STREET[k]}</td><td>${v.n}</td><td>${v.score} %</td></tr>`).join("");
+  const verdicts = Object.entries(VERDICT).map(([k, l]) => `<tr><td>${l}</td><td>${st.by_verdict[k] || 0}</td></tr>`).join("");
+  const recent = st.recent.map((r) => `<tr><td>${STREET[r.street]}</td><td>${r.hand.slice(0, 2)}${r.hand.slice(2)}</td><td>${r.actions[r.chosen]}</td><td><span class="verdict v-${r.verdict}">${Math.round(r.freq * 100)}%</span></td></tr>`).join("");
+  $("stats").innerHTML = `
+    <div class="stats"><div class="stat"><b>${st.score} %</b><span>Score GTO</span></div><div class="stat"><b>${st.gto_rate} %</b><span>Actions GTO</span></div><div class="stat"><b>${st.decisions}</b><span>Décisions</span></div></div>
+    <table style="margin-top:12px"><tr><th>Street</th><th>N</th><th>Score</th></tr>${streets}</table>
+    <table style="margin-top:12px"><tr><th>Verdict</th><th>N</th></tr>${verdicts}</table>
+    <table style="margin-top:12px"><tr><th colspan="4">Dernières décisions</th></tr>${recent}</table>`;
+}
+
+function renderHeader(s) {
+  const sel = $("matchup");
+  if (!sel.options.length) {
+    sel.innerHTML = `<option value="random">Aléatoire</option>` + Object.entries(s.matchups).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  }
+  const total = Object.values(s.library).reduce((a, b) => a + b, 0);
+  $("library").textContent = `Bibliothèque : ${total} flop${total > 1 ? "s" : ""} résolu${total > 1 ? "s" : ""}` + (sel.value !== "random" ? ` (${s.library[sel.value]} pour ce spot)` : "");
+  $("newhand").disabled = !!s.busy;
+}
+
+function render(s) {
+  state = s;
+  renderHeader(s);
+  renderTable(s.hand);
+  renderStatus(s);
+  renderFeedback(s.hand);
+  renderLog(s.hand);
+  renderStats(s.stats);
+}
+
+async function refresh() {
+  try {
+    const raw = await (await fetch("/api/state")).text();
+    if (raw !== last) { last = raw; render(JSON.parse(raw)); }
+  } catch (e) { /* server restarting */ }
+}
+
+async function act(i) {
+  document.querySelectorAll("#actions button").forEach((b) => (b.disabled = true));
+  try { await api("/api/act", { index: i }); } catch (e) { alert(e.message); }
+  refresh();
+}
+
+$("newhand").onclick = async () => {
+  try { await api("/api/new_hand", { matchup: $("matchup").value, hero: $("hero").value, flop_mode: $("flopmode").value }); } catch (e) { alert(e.message); }
+  refresh();
+};
+$("matchup").onchange = () => state && renderHeader(state);
+$("resetstats").onclick = async () => { if (confirm("Effacer toutes les statistiques ? (une sauvegarde .bak est conservée)")) { await api("/api/reset_stats", {}); refresh(); } };
+
+setInterval(refresh, 600);
+refresh();
+</script>
+</body>
+</html>
