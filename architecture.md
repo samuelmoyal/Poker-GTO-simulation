@@ -783,6 +783,15 @@ Budget cible : **< 400 ms par décision flop**.
 > flop en 1,1 s au lieu de ~27 s. Résultat : 7,4 s → 4,5 s par décision (réseau 4,7 → 2,0 s), tables par flop
 > 17–21 s → 0,8 s, **sorties strictement identiques** (tests d'équivalence à 1e-5). Reste : features 1,7 s,
 > réseau 2,0 s, post 0,7 s pour 100 itérations, soit ~11× le budget de 400 ms.
+>
+> **Fait ensuite (23/09/2026)**, mesuré machine libre, même session avant/après (TINY, 12 cartes, 100 itérations, un
+> rafraîchissement par itération ; 5 feuilles, donc 60 états par appel) : les équités des feuilles
+> (`NetLeaves._equity_all`) passent de 48 petits produits matriciels par itération à 12 (un par carte, sur la table
+> de victoire en place) plus un seul pour tous les dénominateurs. Features 1,48 → 0,72 s ; une décision sur un flop
+> déjà préparé 3,8 → 2,95 s, sur un flop neuf (tables comprises) 4,9 → 3,7 s. Sorties identiques à 1,3e-5 près
+> (bruit float32). Piège mesuré : regrouper les 12 tables en un seul `bmm` est PLUS lent (`wd[ks]` copie 84 Mo,
+> 18 ms sur MPS), l'indexation `torch.index_select` ne coûte que 1,8 ms. Reste, pour 100 itérations : réseau 1,6 s,
+> features 0,7 s, post 0,6 s, CFR 0,1 s.
 
 ---
 

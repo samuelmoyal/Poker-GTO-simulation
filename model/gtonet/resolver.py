@@ -133,6 +133,17 @@ class NetLeaves(CachedLeaves):
         num, den = r @ self.wd[k].T, r @ self.disjoint.T
         return torch.where(den > 1e-12, num / den.clamp_min(1e-12), torch.full_like(num, 0.5))
 
+    def _equity_all(self, ks, r):
+        """`_equity` for every (range, card) pair at once.  r: (M, Ks, 1326), range m facing turn card ks[j] in r[m, j]
+        -> (M, Ks, 1326).  One matmul per card on the resident win table (a view, no copy), and ONE matmul for all the
+        denominators and one `where`, instead of two matmuls and a `where` per (player, card).  Gathering the Ks tables
+        into a batch for a single bmm is slower: `wd[ks]` copies 84 MB (18 ms on MPS)."""
+        if not self.fast:
+            return torch.stack([self.tables[k].equity(r[:, j]) for j, k in enumerate(ks)], dim=1)
+        num = torch.stack([r[:, j] @ self.wd[k].T for j, k in enumerate(ks)], dim=1)           # sum_h' wd[k, h, h'] r[h']
+        den = (r.reshape(-1, r.shape[-1]) @ self.disjoint.T).reshape(r.shape)
+        return torch.where(den > 1e-12, num / den.clamp_min(1e-12), torch.full_like(num, 0.5))
+
     @torch.no_grad()
     def refresh(self, ends, sample=None):
         """ends: [(end node, r0, r1)] -> caches ubar for every leaf; one batched net evaluation.
@@ -150,8 +161,8 @@ class NetLeaves(CachedLeaves):
             n0, n1 = mix_with_root(r0c, self.root[0], keep[None], self.floor), mix_with_root(r1c, self.root[1], keep[None], self.floor)
         else:
             n0, n1 = r0c / r0c.sum(-1, keepdim=True).clamp_min(1e-30), r1c / r1c.sum(-1, keepdim=True).clamp_min(1e-30)
-        eq_oop = torch.stack([self._equity(k, n1[:, j]) for j, k in enumerate(ks)], dim=1)              # (L, Ks, 1326)
-        eq_ip = torch.stack([self._equity(k, n0[:, j]) for j, k in enumerate(ks)], dim=1)
+        eq = self._equity_all(ks, torch.cat([n1, n0]))                                                  # (2L, Ks, 1326)
+        eq_oop, eq_ip = eq[:L], eq[L:]                                                                  # OOP faces n1, IP faces n0
         pot2 = torch.tensor([self.pot + 2 * e[0].contrib[0] for e in ends], dtype=torch.float32, device=dev)
         stack2 = torch.tensor([self.stack - e[0].contrib[0] for e in ends], dtype=torch.float32, device=dev)
         spr = (stack2 / pot2)[:, None].expand(L, Ks).reshape(-1)
