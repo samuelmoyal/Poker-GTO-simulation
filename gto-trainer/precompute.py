@@ -7,6 +7,8 @@
   python3 precompute.py -m BTN_vs_BB -n 20           # 20 random flops for one matchup
   python3 precompute.py -m BTN_vs_BB -f AsKd7c Qh8h3d
   python3 precompute.py                              # 5 random flops for each of the app's SRP matchups
+  python3 precompute.py --redo 770851                # re-solve every flop made under an older profile id
+GTO_THREADS=4 (env) limits the solver's threads; `nice -n 10` keeps the machine responsive meanwhile.
 """
 import argparse
 import json
@@ -49,6 +51,7 @@ def main():
     ap.add_argument("--kind", nargs="+", choices=sorted(set(preflop.KINDS.values())), help="restrict to these pot types")
     ap.add_argument("--total", type=int, help="sample this many (matchup, flop) jobs across the whole tree")
     ap.add_argument("--mix", default=DEFAULT_MIX, help=f"pot-type weights for --total (default {DEFAULT_MIX})")
+    ap.add_argument("--redo", metavar="PROFILE", help="re-solve every flop of the library made under this older profile id")
     ap.add_argument("--list", action="store_true", help="print the available lines and exit")
     args = ap.parse_args()
 
@@ -64,7 +67,14 @@ def main():
         print({k: len(v) for k, v in pool.items()}, "lines")
         return
 
-    if args.total:
+    if args.redo:
+        jobs = []
+        for name in sorted(os.listdir(config.FLOP_CACHE_DIR)):
+            if name.endswith(".json.gz") and name[: -len(".json.gz")].split("__")[2] == args.redo:
+                mk, board, _ = name[: -len(".json.gz")].split("__")
+                if mk in lines:
+                    jobs.append((mk, tuple(board[i:i + 2] for i in range(0, 6, 2))))
+    elif args.total:
         jobs = sample_jobs(args.total, parse_mix(args.mix), pool)
     else:
         matchups = args.matchup or ([k for ks in pool.values() for k in ks] if args.kind else list(config.MATCHUPS))

@@ -50,7 +50,7 @@ BET_TREE = {
         "river": dict(bet=[66], raise_=[150], donk=[66], allin=True),
     },
 }
-THREADS = os.cpu_count() or 4
+THREADS = int(os.environ.get("GTO_THREADS") or os.cpu_count() or 4)
 
 # The solver binary (tools/turn-labels: `cargo build --release --bin street_tree`) and its effort per solved street.
 # `target_pct` is the exploitability to reach, in % of the pot at the root of the solved street.  Measured on an
