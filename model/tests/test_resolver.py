@@ -102,5 +102,31 @@ class NetLeavesTest(unittest.TestCase):
                 self.assertLess(np.abs(got - want)[live.numpy()].max() / scale, 1e-4)   # identical on the initial range's hands
 
 
+
+class NetFreeLeavesTest(unittest.TestCase):
+    """`refresh(net_free=True)` is what the net says before any learning: with its heads at their zero initialisation the
+    net's output IS the equity baseline, so both paths must give the same leaf values (on the hands the net evaluates)."""
+
+    def test_equals_a_zero_initialised_net(self):
+        from gtonet import labels
+        flop = ["Ts", "7s", "3h"]
+        ip, oop = flopdump.root_reach("BTN_vs_BB", flop)
+        r0, r1 = (labels._vec(list(d), list(d.values())) for d in (oop, ip))
+        cpu = torch.device("cpu")
+        turn_cards = [cards.CARD_ID[c] for c in ("2c", "9d", "Kh", "Ac")]
+        net = M.NetTurn(M.TINY).eval()
+        leaves = resolver.NetLeaves(net, flop, 55.0, 975.0, cpu, root=(r0, r1), turn_cards=turn_cards)
+        rng = np.random.default_rng(3)
+        ends = [(type("N", (), {"contrib": (x, x)})(), r0 * rng.random(cfr.H), r1 * rng.random(cfr.H)) for x in (0.0, 27.5)]
+        leaves.refresh(ends)
+        with_net = {id(n): tuple(u.copy() for u in leaves.ubar[id(n)]) for n, _, _ in ends}
+        leaves.refresh(ends, net_free=True)
+        live = np.zeros(cfr.H, dtype=bool)
+        live[leaves.support.numpy()] = True
+        for node, _, _ in ends:
+            for side in (0, 1):
+                np.testing.assert_allclose(leaves.ubar[id(node)][side][live], with_net[id(node)][side][live], atol=1e-3)
+
+
 if __name__ == "__main__":
     unittest.main()

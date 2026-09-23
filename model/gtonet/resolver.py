@@ -65,10 +65,12 @@ class CachedLeaves:
         self.blocks, self.chance, self.device = blocks, chance, device
         self.ubar = {}
 
-    def store(self, ends, u_oop, u_ip, card_w=None):
-        R0 = torch.tensor(np.stack([e[1] for e in ends]), dtype=torch.float32, device=self.device)
-        R1 = torch.tensor(np.stack([e[2] for e in ends]), dtype=torch.float32, device=self.device)
-        ub0, ub1 = chance_average(u_oop, u_ip, R0, R1, self.blocks, self.chance, self.device, card_w)
+    def store(self, ends, u_oop, u_ip, card_w=None, R=None, blocks=None):
+        """u_*: (L, K', 1326) values for K' next cards; `blocks` (K', 1326) and `card_w` (K',) describe those cards (default:
+        all of them); `R` = the (R0, R1) tensors when the caller has them already."""
+        if R is None:
+            R = [torch.tensor(np.stack([e[i] for e in ends]), dtype=torch.float32, device=self.device) for i in (1, 2)]
+        ub0, ub1 = chance_average(u_oop, u_ip, R[0], R[1], self.blocks if blocks is None else blocks, self.chance, self.device, card_w)
         for i, e in enumerate(ends):
             self.ubar[id(e[0])] = (ub0[i], ub1[i])
 
@@ -145,10 +147,12 @@ class NetLeaves(CachedLeaves):
         return torch.where(den > 1e-12, num / den.clamp_min(1e-12), torch.full_like(num, 0.5))
 
     @torch.no_grad()
-    def refresh(self, ends, sample=None):
+    def refresh(self, ends, sample=None, net_free=False):
         """ends: [(end node, r0, r1)] -> caches ubar for every leaf; one batched net evaluation.
 
-        sample: indices (into the turn cards) to evaluate this time (chance sampling); None = all."""
+        sample: indices (into the turn cards) to evaluate this time (chance sampling); None = all.
+        net_free: value the leaves with the parameter-free equity baseline instead of the net (no forward pass): what the
+        net's output is before any learning, and a cheap way to warm-start the CFR."""
         dev, L, K = self.device, len(ends), len(self.turn_cards)
         ks = list(range(K)) if sample is None else sorted(int(k) for k in sample)
         Ks = len(ks)
@@ -156,52 +160,53 @@ class NetLeaves(CachedLeaves):
         keep = (~self.blocks).float()[ks]                                                               # (Ks, 1326)
         R0 = torch.tensor(np.stack([e[1] for e in ends]), dtype=torch.float32, device=dev)             # (L, 1326)
         R1 = torch.tensor(np.stack([e[2] for e in ends]), dtype=torch.float32, device=dev)
-        r0c, r1c = R0[:, None, :] * keep[None], R1[:, None, :] * keep[None]                            # (L, Ks, 1326)
+        rc = torch.cat([R0, R1])[:, None, :] * keep[None]                                              # (2L, Ks, 1326)
         if self.root is not None:
-            n0, n1 = mix_with_root(r0c, self.root[0], keep[None], self.floor), mix_with_root(r1c, self.root[1], keep[None], self.floor)
+            root2 = torch.cat([self.root[0].expand(L, 1, -1), self.root[1].expand(L, 1, -1)])
+            n = mix_with_root(rc, root2, keep[None], self.floor)
         else:
-            n0, n1 = r0c / r0c.sum(-1, keepdim=True).clamp_min(1e-30), r1c / r1c.sum(-1, keepdim=True).clamp_min(1e-30)
+            n = rc / rc.sum(-1, keepdim=True).clamp_min(1e-30)
+        n0, n1 = n[:L], n[L:]
         eq = self._equity_all(ks, torch.cat([n1, n0]))                                                  # (2L, Ks, 1326)
         eq_oop, eq_ip = eq[:L], eq[L:]                                                                  # OOP faces n1, IP faces n0
         pot2 = torch.tensor([self.pot + 2 * e[0].contrib[0] for e in ends], dtype=torch.float32, device=dev)
         stack2 = torch.tensor([self.stack - e[0].contrib[0] for e in ends], dtype=torch.float32, device=dev)
-        spr = (stack2 / pot2)[:, None].expand(L, Ks).reshape(-1)
-        flat = lambda x: x.reshape(L * Ks, -1)  # noqa: E731
-        tile = lambda x: x[ks][None].expand(L, Ks, *x.shape[1:]).reshape(L * Ks, *x.shape[1:])  # noqa: E731
-        batch = dict(in_oop=flat(n0), in_ip=flat(n1), f_eq_oop=flat(eq_oop), f_eq_ip=flat(eq_ip), f_eq_unif=tile(self.f_unif),
-                     f_cat=tile(self.f_cat), f_outs=tile(self.f_outs), spr=spr, board=tile(self.boards_c),
-                     hand_cards=tile(self.hand_cards_c))
-        if dev.type == "mps":
-            torch.mps.synchronize()
-        t1 = time.time()
-        v_oop, v_ip = [], []
-        n = L * Ks
-        step = -(-n // -(-n // self.chunk))                # balanced chunks of at most `chunk` states (60 -> 2 x 30, not 36 + 24)
-        for i in range(0, n, step):
-            b = {k: v[i:i + step] for k, v in batch.items()}
-            if self.support is not None:
-                b["support"] = self.support
-            o = self.net(b, policy=False)
-            v_oop.append(o["v_oop"])
-            v_ip.append(o["v_ip"])
-        v_oop, v_ip = torch.cat(v_oop).reshape(L, Ks, -1), torch.cat(v_ip).reshape(L, Ks, -1)
-        if dev.type == "mps":
-            torch.mps.synchronize()
-        t2 = time.time()
         scale = (pot2 + stack2)[:, None, None]                                                          # u = (P' + S') v
-        u_oop, u_ip = torch.zeros(L, K, cards.NUM_COMBOS, device=dev), torch.zeros(L, K, cards.NUM_COMBOS, device=dev)
-        for u, v in ((u_oop, v_oop), (u_ip, v_ip)):
-            full = torch.zeros(L, Ks, cards.NUM_COMBOS, device=dev)
-            if self.support is None:
-                full = scale * v
-            else:
-                full[:, :, self.support] = scale * v                                                    # hands outside: no value
-            u[:, ks] = full
-        card_w = None
-        if sample is not None:
-            card_w = torch.zeros(K, device=dev)
-            card_w[ks] = K / Ks
-        self.store(ends, u_oop, u_ip, card_w)
+        if net_free:
+            if dev.type == "mps":
+                torch.mps.synchronize()
+            t1 = t2 = time.time()
+            inv = (1.0 / (1.0 + stack2 / pot2))[:, None, None]                                          # v = (eq - 1/2) / (1 + SPR)
+            u_oop, u_ip = scale * inv * (eq_oop - 0.5), scale * inv * (eq_ip - 0.5)                     # (L, Ks, 1326)
+        else:
+            spr = (stack2 / pot2)[:, None].expand(L, Ks).reshape(-1)
+            flat = lambda x: x.reshape(L * Ks, -1)  # noqa: E731
+            tile = lambda x: x[ks][None].expand(L, Ks, *x.shape[1:]).reshape(L * Ks, *x.shape[1:])  # noqa: E731
+            batch = dict(in_oop=flat(n0), in_ip=flat(n1), f_eq_oop=flat(eq_oop), f_eq_ip=flat(eq_ip), f_eq_unif=tile(self.f_unif),
+                         f_cat=tile(self.f_cat), f_outs=tile(self.f_outs), spr=spr, board=tile(self.boards_c),
+                         hand_cards=tile(self.hand_cards_c))
+            if dev.type == "mps":
+                torch.mps.synchronize()
+            t1 = time.time()
+            v_oop, v_ip = [], []
+            m = L * Ks
+            step = -(-m // -(-m // self.chunk))            # balanced chunks of at most `chunk` states (60 -> 2 x 30, not 36 + 24)
+            for i in range(0, m, step):
+                b = {k: v[i:i + step] for k, v in batch.items()}
+                if self.support is not None:
+                    b["support"] = self.support
+                o = self.net(b, policy=False)
+                v_oop.append(o["v_oop"])
+                v_ip.append(o["v_ip"])
+            v_oop, v_ip = torch.cat(v_oop).reshape(L, Ks, -1), torch.cat(v_ip).reshape(L, Ks, -1)
+            if dev.type == "mps":
+                torch.mps.synchronize()
+            t2 = time.time()
+            u_oop, u_ip = scale * v_oop, scale * v_ip
+            if self.support is not None:                                                                # hands outside: no value
+                u_oop, u_ip = (torch.zeros(L, Ks, cards.NUM_COMBOS, device=dev).index_copy_(2, self.support, u) for u in (u_oop, u_ip))
+        card_w = None if sample is None else torch.full((Ks,), K / Ks, device=dev)
+        self.store(ends, u_oop, u_ip, card_w, R=(R0, R1), blocks=self.blocks[ks])
         self.timing["features"] += t1 - t0
         self.timing["net"] += t2 - t1
         self.timing["post"] += time.time() - t2
@@ -209,16 +214,25 @@ class NetLeaves(CachedLeaves):
 
 
 def resolve(net, flop, pot, stack, r0, r1, device, n_iter=100, refresh=10, bet_fracs=(0.5,), raise_fracs=(1.0,),
-            max_raises=1, chunk=36, leaves=None, floor=0.003, n_cards=None, seed=0):
-    """Truncated flop CFR.  Returns dict(game, leaves, timing seconds).  Pass `leaves` to reuse the 49 board tables."""
+            max_raises=1, chunk=36, leaves=None, floor=0.003, n_cards=None, seed=0, warm=0):
+    """Truncated flop CFR.  Returns dict(game, leaves, timing seconds).  Pass `leaves` to reuse the 49 board tables.
+
+    warm: the first `warm` of the `n_iter` iterations value the leaves with the equity baseline (no net call, ~4x cheaper),
+    then the same CFR carries on with the net.  The regrets carry over (they give the starting strategy), the average
+    strategy restarts, otherwise it stays biased by the equity leaves.  Off by default: measured on 8 held-out flops it only
+    pays at short budgets (20 warm of 60 iterations: 1.08 s, exploitability 0.60 % in the net's game, against ~0.85 % for a
+    cold run of the same time; no gain at 100 iterations)."""
     t_all = time.time()
     root = cfr.build_round_tree(pot, stack, bet_fracs, raise_fracs, max_raises)
     leaves = leaves or NetLeaves(net, flop, pot, stack, device, chunk, root=(r0, r1), floor=floor)
     game = cfr.Cfr(root, r0, r1, pot, leaves)
     t_cfr, rng = 0.0, np.random.default_rng(seed)
     for it in range(n_iter):
+        if warm and it == warm:
+            game.ssum = [np.zeros_like(x) for x in game.ssum]
         if it % refresh == 0:
-            leaves.refresh(game.end_reaches(), None if n_cards is None else rng.choice(len(leaves.turn_cards), n_cards, replace=False))
+            leaves.refresh(game.end_reaches(), None if n_cards is None else rng.choice(len(leaves.turn_cards), n_cards, replace=False),
+                           net_free=it < warm)
         t0 = time.time()
         game.iterate()
         t_cfr += time.time() - t0

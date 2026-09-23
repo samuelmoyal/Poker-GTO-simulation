@@ -824,6 +824,22 @@ Budget cible : **< 400 ms par décision flop**.
 > et il faudrait figer B et K (remplissage des mains) et convertir les tenseurs à chaque appel. Écarté. Le plancher d'un appel
 > réseau est de l'ordre de 3 à 5 ms quel que soit le moteur ; sur 100 itérations, réseau ~0,9 s, features 0,9 s, post 0,5 s : le
 > prochain poste à réduire est donc features + post (beaucoup de petits tenseurs), puis le nombre d'itérations.
+>
+> **Nombre d'itérations** (12 flops val/test, réf. = 400 itérations sur les 49 cartes ; temps proportionnel aux itérations) :
+> 36 it 1,13 s, exploitabilité du jeu du réseau 0,81 % ; 60 it 1,4-1,7 s, 0,55 % ; 72 it 2,0 s, 0,50 % ; 100 it 2,4-2,8 s, 0,40 %
+> (référence 0,14 %). La distance de la stratégie à la racine à la référence (fréquence de mise OOP, pondérée par la range) reste
+> grande : 0,26 / 0,21 / 0,195 / 0,173 : à 100 itérations la stratégie est loin d'être convergée même si elle est peu exploitable.
+> Rien ne relie le nombre d'itérations à la taille des paquets (un appel par itération, quel que soit le multiple).
+>
+> **Post-traitement** (fait) : la moyenne sur les cartes ne porte plus que sur les cartes échantillonnées (12 et non 49),
+> R0/R1 ne sont transférés qu'une fois, les deux côtés du plancher epsilon sont mélangés en un appel : post 0,68 -> 0,33 s,
+> décision 3,0 -> 2,45 s (A/B alterné, mêmes sessions), stratégie identique à 2e-4 près.
+>
+> **Démarrage à chaud** (`resolve(..., warm=W)`, désactivé par défaut) : les W premières itérations valorisent les feuilles par la
+> ligne de base d'équité (sans réseau, ~4x moins cher), puis le CFR continue avec le réseau. Sans remise à zéro de la stratégie
+> moyenne c'est pire que le démarrage à froid (100 it, 30 chaudes : 0,84 % contre 0,40 %). Avec remise à zéro de la moyenne
+> (les regrets restent) : 20 chaudes sur 60 itérations = 1,08 s, 0,60 % contre ~0,85 % pour un démarrage à froid de même durée,
+> mais aucun gain à 100 itérations. Les 8 flops de ce test sont peu nombreux ; gain modeste.
 
 ---
 
