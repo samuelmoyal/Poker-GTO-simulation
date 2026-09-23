@@ -106,8 +106,10 @@ fn label_actions(acts: &[Action]) -> (Vec<usize>, Vec<String>) {
 
 fn build(game: &mut PostFlopGame, hist: &mut Vec<usize>) -> Value {
     game.apply_history(hist);
-    if game.is_terminal_node() { return json!({"node_type": "terminal_node"}); }
-    if game.is_chance_node() { return json!({"node_type": "chance_node", "deal_number": 0}); }
+    // the street is over: a card comes next (also after an all-in call, where the board is run out) or, on the river,
+    // a showdown.  Fold children are skipped by the caller, so a terminal node here is always one of these.
+    if game.is_terminal_node() && game.current_board().len() == 5 { return json!({"node_type": "showdown_node"}); }
+    if game.is_terminal_node() || game.is_chance_node() { return json!({"node_type": "chance_node", "deal_number": 0}); }
     let acts = game.available_actions();
     let p = game.current_player();
     let hands = holes_to_strings(game.private_cards(p)).unwrap();
