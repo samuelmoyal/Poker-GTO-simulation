@@ -1,0 +1,33 @@
+# --- generated data: labels, datasets, logs, cached solves (regenerable, several hundred MB) -------------------
+/model/data
+/model/pip_install.log
+/gto-trainer/cache
+/gto-trainer/data
+/gto-trainer/work
+
+# --- third-party binary release, downloaded separately (see README.md) --------------------------------------------
+/TexasSolver-v0.2.0-MacOs
+
+# --- Python ----------------------------------------------------------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+
+# --- Rust build outputs (cargo build --release recreates them) ---------------------------------------------------
+/tools/*/target/
+
+# --- weights / arrays / logs anywhere ----------------------------------------------------------------------------
+*.pt
+*.parquet
+*.npy
+*.log
+
+# --- ...except the small trained value nets we ship (the 63 MB DOC ones and experiment leftovers stay local) ----
+!/model/checkpoints/net_turn_tiny_v2.pt
+!/model/checkpoints/net_turn_s2_v2.pt
+!/model/checkpoints/net_turn_small_v2.pt
+
+# --- OS / editor ------------------------------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
