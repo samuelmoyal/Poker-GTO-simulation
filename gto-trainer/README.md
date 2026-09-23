@@ -10,7 +10,7 @@ cd gto-trainer
 python3 server.py            # ouvre http://localhost:8765
 ```
 
-Python 3.13, aucune dépendance Python. Le solveur est un binaire Rust à compiler une fois :
+Python 3.13. Le solveur est un binaire Rust à compiler une fois :
 
 ```bash
 (cd ../tools/turn-labels && cargo build --release)      # produit target/release/street_tree
@@ -19,11 +19,27 @@ Python 3.13, aucune dépendance Python. Le solveur est un binaire Rust à compil
 Les fichiers de ranges préflop viennent encore du dossier `../TexasSolver-v0.2.0-MacOs/ranges/6max_range`
 (voir le README à la racine) ; le solveur TexasSolver lui-même n'est plus utilisé.
 
+Pour le mode « Main IRL » (voir plus bas), lance le serveur avec l'environnement du modèle, qui a torch :
+
+```bash
+../model/.venv/bin/python server.py
+```
+
+Sans torch, le serveur démarre quand même et seuls les modes « Bibliothèque » et « Nouveau flop » marchent.
+
 ## Fonctionnement
 
 - **Spots** : pots simples relancés (SRP) à 100bb, heads-up, ranges préflop tirées de
   `ranges/6max_range` (UTG/MP/CO/BTN vs BB, UTG/MP/CO vs BTN, SB vs BB). Voir `gto/config.py`.
-- **Flop** : résolu **en avance** et rangé dans `cache/flops/` (bibliothèque). Une même solution sert pour
+- **Flop, trois modes** (menu de l'interface) :
+  - **Main IRL** : aucun précalcul. Le flop est tiré au hasard et résolu **sur le moment par le réseau de valeur**
+    (`gto/netflop.py`, ~3 s sur M2) : un CFR tronqué au flop dont les feuilles sont valorisées par `net_turn`.
+    C'est une approximation (perte d'EV réelle mesurée : ~0,9 % du pot sur un flop de validation, autres flops en cours de mesure), avec l'arbre de
+    flop que le réseau connaît : une taille de mise (50 %), ni relance ni all-in. Réglages : `GTO_NET_CKPT`
+    (`tiny_v2` par défaut, `small_v2` plus précis et plus lent), `GTO_NET_DEVICE` (`mps` ou `cpu`), `GTO_NET_ITERS`.
+  - **Bibliothèque** : flop résolu en avance par le solveur exact et rangé dans `cache/flops/`.
+  - **Nouveau flop, solveur exact** : résolution à la demande (~20-60 s).
+  Détail de la bibliothèque : Une même solution sert pour
   n'importe quelle permutation de couleurs : le flop affiché est tiré au hasard dans les couleurs.
 - **Turn et river** : résolus **à la volée** (0,1 à 1 s chacun), avec les ranges rétrécies **combo par combo** par les
   actions réellement jouées. Le résultat est mis en cache (`cache/streets/`).

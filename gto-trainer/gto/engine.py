@@ -10,7 +10,7 @@ import threading
 import time
 import traceback
 
-from . import config, ranges, solver, spots
+from . import config, netflop, ranges, solver, spots
 from .cards import DECK, RVAL, canon, canonical_flop, describe, evaluate, hand_class, map_combo, random_suit_map
 
 STREETS = ("flop", "turn", "river")
@@ -183,22 +183,28 @@ class Trainer:
 
     def _setup_hand(self, matchup, hero_side, flop_mode):
         m = config.MATCHUPS[matchup]
-        cached = spots.cached_flops(matchup)
-        if flop_mode == "cache" and cached:
-            canon_board = list(random.choice(cached)[1])
-            self._set_msg("Chargement du flop depuis la bibliothèque…")
-        else:
-            canon_board = spots.random_canonical_flop()
-            self._set_msg("Nouveau flop : résolution en cours (~20 s)…")
-        tree = spots.solve_flop(matchup, canon_board, on_progress=self._progress)
-
-        suit_map = random_suit_map()  # canonical suits -> the suits shown to the player
-        board = [c[0] + suit_map[c[1]] for c in canon_board]
-        board.sort(key=lambda c: RVAL[c[0]], reverse=True)
-        remap_tree(tree, suit_map)
-
         ip_w, oop_w = ranges.load_matchup_ranges(matchup)
-        reach = {"ip": ranges.combo_weights(ip_w, board), "oop": ranges.combo_weights(oop_w, board)}
+        if flop_mode == "irl":
+            # "main IRL": any flop, solved on the spot by the value network, no library
+            board = sorted(spots.random_flop(), key=lambda c: RVAL[c[0]], reverse=True)
+            reach = {"ip": ranges.combo_weights(ip_w, board), "oop": ranges.combo_weights(oop_w, board)}
+            self._set_msg("Main IRL : le réseau résout le flop…")
+            tree = netflop.solve(board, m["pot_bb"] * config.SCALE, m["stack_bb"] * config.SCALE, reach["ip"], reach["oop"])
+        else:
+            cached = spots.cached_flops(matchup)
+            if flop_mode == "cache" and cached:
+                canon_board = list(random.choice(cached)[1])
+                self._set_msg("Chargement du flop depuis la bibliothèque…")
+            else:
+                canon_board = spots.random_canonical_flop()
+                self._set_msg("Nouveau flop : résolution en cours (~20 s)…")
+            tree = spots.solve_flop(matchup, canon_board, on_progress=self._progress)
+
+            suit_map = random_suit_map()  # canonical suits -> the suits shown to the player
+            board = [c[0] + suit_map[c[1]] for c in canon_board]
+            board.sort(key=lambda c: RVAL[c[0]], reverse=True)
+            remap_tree(tree, suit_map)
+            reach = {"ip": ranges.combo_weights(ip_w, board), "oop": ranges.combo_weights(oop_w, board)}
         vill_side = "oop" if hero_side == "ip" else "ip"
         known = {s: self._solved_combos(tree, s) for s in ("ip", "oop")}
         hero_pool = {c: w for c, w in reach[hero_side].items() if c in known[hero_side]}

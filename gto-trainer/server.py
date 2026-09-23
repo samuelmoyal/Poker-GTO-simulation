@@ -9,7 +9,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from gto import config
+from gto import config, netflop
 from gto.engine import Trainer
 
 trainer = Trainer()
@@ -74,6 +74,10 @@ def main():
     args = ap.parse_args()
     if not os.path.exists(config.SOLVER_BIN):
         sys.exit(f"solveur introuvable: {config.SOLVER_BIN}\n  -> cd tools/turn-labels && cargo build --release")
+    try:
+        netflop.preload()                    # the "main IRL" mode needs torch: fine to be without it, the other modes still work
+    except netflop.Unavailable as exc:
+        print(f"Mode « Main IRL » désactivé : {exc}")
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://localhost:{args.port}"
     print(f"GTO Trainer sur {url}  (Ctrl-C pour arrêter)")
