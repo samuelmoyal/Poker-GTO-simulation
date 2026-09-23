@@ -1,0 +1,3 @@
+# Code from 2023: recent rustc denies this lint by default (raw-pointer autoref, not an actual bug).
+[build]
+rustflags = ["-A", "dangerous_implicit_autorefs", "-C", "target-cpu=native"]
