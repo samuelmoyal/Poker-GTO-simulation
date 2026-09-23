@@ -1,0 +1,16 @@
+[package]
+name = "boardlib"
+version = "0.1.0"
+edition = "2021"
+description = "Fast per-board tables for the value net: 7-card strength, made-hand features, equity vs a range (C ABI, used via ctypes)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rayon = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
