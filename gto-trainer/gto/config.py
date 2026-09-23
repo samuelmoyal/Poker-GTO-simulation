@@ -12,6 +12,7 @@ RANGES_DIR = os.path.join(SOLVER_DIR, "ranges", "6max_range")
 CACHE_DIR = os.path.join(ROOT, "cache")
 FLOP_CACHE_DIR = os.path.join(CACHE_DIR, "flops")
 STREET_CACHE_DIR = os.path.join(CACHE_DIR, "streets")
+NATIVE_CACHE_DIR = os.path.join(CACHE_DIR, "native")
 DATA_DIR = os.path.join(ROOT, "data")
 WORK_DIR = os.path.join(ROOT, "work")
 STATIC_DIR = os.path.join(ROOT, "static")
@@ -68,6 +69,16 @@ EFFORT = {
     "river": dict(iterations=201, accuracy=1.0, print_interval=20, timeout=300),
 }
 THREADS = os.cpu_count() or 4
+
+# postflop-solver backend (tools/turn-labels, `cargo build --release --bin street_tree`).  Same exploitability
+# unit as above (% of the pot at the root of the solved street).  Measured: a turn/river solve is ~1-3 s there.
+NATIVE_BIN = os.environ.get("STREET_TREE_BIN") or os.path.join(
+    os.path.dirname(ROOT), "tools", "turn-labels", "target", "release", "street_tree")
+NATIVE_EFFORT = {
+    "flop":  dict(target_pct=0.5, max_iter=1000, max_seconds=300),
+    "turn":  dict(target_pct=0.5, max_iter=1000, max_seconds=60),
+    "river": dict(target_pct=0.3, max_iter=1000, max_seconds=30),
+}
 
 # Hand classes with a weight below this are dropped: from the preflop range files, and when narrowing
 # ranges between streets.  Fewer combos = faster iterations, and the strategy barely moves.
