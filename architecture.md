@@ -817,6 +817,13 @@ Budget cible : **< 400 ms par décision flop**.
 > opérations, 4,5 -> 3,1 ms par appel, sorties identiques à 7e-8 ; et paquets équilibrés d'au plus 36 états au lieu de 24
 > (un saut de 3x apparaît dès 48 états par appel). Sur les mêmes 50 flops : **2,73 s** sur flop neuf (médiane 2,68, p90 3,10,
 > max 3,98), **2,40 s** en répétition, exploitabilité du jeu du réseau inchangée (0,38 %).
+>
+> **Core ML** (coremltools 9.0, torch 2.14 non testé par l'outil) : la conversion du forward TINY (36 états, 611 mains fixes,
+> 285 opérations) réussit du premier coup en fp32, écart 1,8e-7 avec PyTorch. Un appel coûte 4,8 ms sur GPU (entrées et sorties
+> numpy comprises) et 14 ms sur CPU, contre ~3,1 ms en rafale et ~9 ms dans la boucle pour PyTorch-MPS : pas de gain décisif,
+> et il faudrait figer B et K (remplissage des mains) et convertir les tenseurs à chaque appel. Écarté. Le plancher d'un appel
+> réseau est de l'ordre de 3 à 5 ms quel que soit le moteur ; sur 100 itérations, réseau ~0,9 s, features 0,9 s, post 0,5 s : le
+> prochain poste à réduire est donc features + post (beaucoup de petits tenseurs), puis le nombre d'itérations.
 
 ---
 
