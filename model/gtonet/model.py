@@ -45,10 +45,15 @@ TINY = Config(d_card=16, d_hand=16, d_board=64, d_trunk=128, n_blocks=2, d_ctx=3
 CONFIGS = {"tiny": TINY, "s2": S2, "small": SMALL, "doc": DOC}
 
 
+_FOURIER_K = {}
+
+
 def fourier_spr(spr: torch.Tensor) -> torch.Tensor:
     """13-dim encoding of log SPR (§8.0, operation 6): the value has kinks in SPR, a scalar captures them badly."""
     x = torch.log(spr.clamp_min(1e-3))[:, None]
-    ks = (2.0 ** torch.arange(6, device=spr.device))[None, :] * math.pi
+    if spr.device not in _FOURIER_K:           # a constant: building it per call costs a device round trip per forward
+        _FOURIER_K[spr.device] = (2.0 ** torch.arange(6, device=spr.device))[None, :] * math.pi
+    ks = _FOURIER_K[spr.device]
     return torch.cat([x, torch.sin(ks * x), torch.cos(ks * x)], dim=-1)
 
 
@@ -105,13 +110,15 @@ class NetTurn(nn.Module):
         return self.board_mlp(torch.cat([flop, self.turn_psi(e[:, 3])], dim=-1))
 
     def pool(self, E, r):
-        """Range -> R in the hand space: r-weighted mean, second moment, and attention over the range (§8.2)."""
-        m1 = torch.einsum("bh,bhd->bd", r, E)
-        m2 = torch.einsum("bh,bhd->bd", r, E * E)
-        scores = torch.einsum("bhd,qd->bqh", self.attn_key(E), self.queries) / math.sqrt(E.shape[-1])
-        scores = scores + torch.log(r.clamp_min(1e-12))[:, None, :]
-        scores = scores.masked_fill((r <= 0)[:, None, :], float("-inf"))
-        att = torch.einsum("bqh,bhd->bqd", scores.softmax(-1), self.attn_val(E)).flatten(1)
+        """Ranges -> R in the hand space: r-weighted mean, second moment, and attention over the range (§8.2).
+        r: (B, S, K), S ranges per input (OOP's and IP's), pooled in one pass: everything that depends on E alone (key and
+        value projections, E*E) is computed once for all S.  Returns (B, S, 3 d_hand)."""
+        m1 = torch.einsum("bsh,bhd->bsd", r, E)
+        m2 = torch.einsum("bsh,bhd->bsd", r, E * E)
+        keys = torch.einsum("bhd,qd->bqh", self.attn_key(E), self.queries) / math.sqrt(E.shape[-1])          # (B, Q, K)
+        logr = torch.where(r > 0, torch.log(r.clamp_min(1e-12)), torch.full_like(r, float("-inf")))          # (B, S, K)
+        scores = keys[:, None] + logr[:, :, None, :]                                                            # (B, S, Q, K)
+        att = torch.einsum("bsqh,bhd->bsqd", scores.softmax(-1), self.attn_val(E)).flatten(2)
         return torch.cat([m1, m2, self.attn_out(att)], dim=-1)
 
     # -- forward ------------------------------------------------------------------------------------------
@@ -134,8 +141,9 @@ class NetTurn(nn.Module):
           policy=False               skip the OOP root-policy head (the flop resolver does not need it).
         """
         r_oop, r_ip, spr = b["in_oop"], b["in_ip"], b["spr"]
-        c_oop, c_ip = equity.corrected_marginals(r_oop, r_ip), equity.corrected_marginals(r_ip, r_oop)   # need the full range
-        bf_oop, bf_ip = equity.blocked_fraction(r_ip), equity.blocked_fraction(r_oop)
+        m_oop, m_ip = equity.card_masses(torch.cat([r_oop, r_ip])).chunk(2)                               # need the full range
+        c_oop, bf_oop = equity.opponent_terms(r_oop, r_ip, m_ip)
+        c_ip, bf_ip = equity.opponent_terms(r_ip, r_oop, m_oop)
         S = b.get("support")
         pick = (lambda x: x) if S is None else (lambda x: x[:, S])  # noqa: E731
         r_oop, r_ip, c_oop, c_ip = pick(r_oop), pick(r_ip), pick(c_oop), pick(c_ip)
@@ -152,7 +160,7 @@ class NetTurn(nn.Module):
             e = self.card_emb(hc)                                                         # (B, K, 2, d_card)
             pair = torch.cat([e[:, :, 0] + e[:, :, 1], e[:, :, 0] * e[:, :, 1]], dim=-1)  # symmetric in the two cards
         E = self.hand_ln(F.gelu(self.hand_in(torch.cat([pair, feat], -1)) + self.hand_board(bemb)[:, None, :]))
-        x = torch.cat([bemb, self.pool(E, r_oop), self.pool(E, r_ip), fourier_spr(spr)], dim=-1)
+        x = torch.cat([bemb, self.pool(E, torch.stack([r_oop, r_ip], dim=1)).flatten(1), fourier_spr(spr)], dim=-1)
         x = self.trunk_in(x)
         for blk in self.blocks:
             x = blk(x)

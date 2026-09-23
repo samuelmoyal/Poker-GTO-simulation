@@ -46,6 +46,17 @@ def corrected_marginals(r_i: torch.Tensor, r_j: torch.Tensor) -> torch.Tensor:
     return c / c.sum(-1, keepdim=True).clamp_min(1e-30)
 
 
+def opponent_terms(r_i: torch.Tensor, r_j: torch.Tensor, m_j: torch.Tensor = None):
+    """(corrected_marginals(r_i, r_j), blocked_fraction(r_j)) from ONE card-mass computation (`m_j` = card_masses(r_j)
+    when the caller already has it): the two formulas share the same gathers, and so do the two sides of a net input."""
+    k = _const(r_i.device)
+    m = card_masses(r_j) if m_j is None else m_j
+    b = m[..., k["c1"]] + m[..., k["c2"]]
+    tot = r_j.sum(-1, keepdim=True)
+    c = r_i * (tot - b + r_j)
+    return c / c.sum(-1, keepdim=True).clamp_min(1e-30), (b - r_j) / tot.clamp_min(1e-30)
+
+
 def blocked_fraction(r_j: torch.Tensor) -> torch.Tensor:
     """(..., 1326): share of the opponent range r_j that a hand h blocks (1 - Z(h)/sum r_j)."""
     k = _const(r_j.device)

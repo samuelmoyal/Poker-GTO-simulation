@@ -87,7 +87,7 @@ class NetLeaves(CachedLeaves):
         with zero reach, but never for hands outside the initial range;
       * the OOP root-policy head is skipped."""
 
-    def __init__(self, net, flop, pot, stack, device, chunk=24, root=None, floor=0.003, turn_cards=None, use_support=True,
+    def __init__(self, net, flop, pot, stack, device, chunk=36, root=None, floor=0.003, turn_cards=None, use_support=True,
                  fast=None):
         self.net, self.device, self.chunk, self.pot, self.stack = net, device, chunk, pot, stack
         self.root = None if root is None else [torch.tensor(np.asarray(x), dtype=torch.float32, device=device)[None, None, :] for x in root]
@@ -175,8 +175,10 @@ class NetLeaves(CachedLeaves):
             torch.mps.synchronize()
         t1 = time.time()
         v_oop, v_ip = [], []
-        for i in range(0, L * Ks, self.chunk):
-            b = {k: v[i:i + self.chunk] for k, v in batch.items()}
+        n = L * Ks
+        step = -(-n // -(-n // self.chunk))                # balanced chunks of at most `chunk` states (60 -> 2 x 30, not 36 + 24)
+        for i in range(0, n, step):
+            b = {k: v[i:i + step] for k, v in batch.items()}
             if self.support is not None:
                 b["support"] = self.support
             o = self.net(b, policy=False)
@@ -207,7 +209,7 @@ class NetLeaves(CachedLeaves):
 
 
 def resolve(net, flop, pot, stack, r0, r1, device, n_iter=100, refresh=10, bet_fracs=(0.5,), raise_fracs=(1.0,),
-            max_raises=1, chunk=24, leaves=None, floor=0.003, n_cards=None, seed=0):
+            max_raises=1, chunk=36, leaves=None, floor=0.003, n_cards=None, seed=0):
     """Truncated flop CFR.  Returns dict(game, leaves, timing seconds).  Pass `leaves` to reuse the 49 board tables."""
     t_all = time.time()
     root = cfr.build_round_tree(pot, stack, bet_fracs, raise_fracs, max_raises)

@@ -32,7 +32,7 @@ def main():
     ap.add_argument("--matchup", default="BTN_vs_BB")
     ap.add_argument("--iters", type=int, default=100)
     ap.add_argument("--refresh", type=int, default=1)
-    ap.add_argument("--chunk", type=int, default=24)
+    ap.add_argument("--chunk", type=int, default=36)
     ap.add_argument("--cards", type=int, default=None, help="chance sampling: turn cards evaluated per refresh (default all 49)")
     ap.add_argument("--device", default="mps")
     ap.add_argument("--repeat", type=int, default=2)

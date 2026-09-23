@@ -792,6 +792,31 @@ Budget cible : **< 400 ms par décision flop**.
 > (bruit float32). Piège mesuré : regrouper les 12 tables en un seul `bmm` est PLUS lent (`wd[ks]` copie 84 Mo,
 > 18 ms sur MPS), l'indexation `torch.index_select` ne coûte que 1,8 ms. Reste, pour 100 itérations : réseau 1,6 s,
 > features 0,7 s, post 0,6 s, CFR 0,1 s.
+>
+> **Mesuré sur les flops jamais vus à l'entraînement** (`bench/eval_heldout.py time` : les 28 flops val et 22 test des
+> matchups SRP natifs, TINY, arbre de flop 50 % sans relance donc 3 feuilles, 12 cartes, 100 itérations, un
+> rafraîchissement par itération, machine libre) : décision sur flop neuf **3,36 s** en moyenne (médiane 3,27, p90 3,58,
+> max 5,15), répétée sur le même flop 2,86 s ; exploitabilité *dans le jeu du réseau* 0,38 % du pot (val 0,38, test 0,38 ;
+> p90 0,54 ; max 0,70). Cette exploitabilité mesure la convergence du CFR sur le modèle, pas l'erreur du réseau.
+>
+> **Élagage des mains de faible poids** (poids < tau x le plus grand poids de la range mis à 0) : les ranges sont presque
+> toutes à poids 1 (préflop pur), donc tau = 0,5 ne retire que 14 % des mains (434 -> 374) et tau = 0,75 24 % (-> 330). Temps
+> 3,36 -> 3,25 -> 3,19 s (-3 %, -5 %), exploitabilité du jeu du réseau 0,38 -> 0,43 -> 0,46 %, et la fréquence de mise OOP à
+> la racine bouge de 0,10 / 0,21 en moyenne (pondérée par la range). Le coût ne dépend presque pas du nombre de mains : ce
+> n'est pas un levier.
+>
+> **Coût par appel du réseau** (TINY, 36 états, 611 mains) : 768 opérations ATen, ~4,5 ms d'émission côté CPU pour ~4,4 ms de
+> calcul (bloqué par l'émission, pas par le GPU) ; le calcul pur est de l'ordre de la milliseconde. `torch.compile` (inductor) fonctionne
+> sur MPS (compilation 7 s par forme) mais ne gagne que 6 %. Sur CPU (4 threads) la même décision prend 3,0 s contre 2,7 s
+> sur MPS : la charge est dominée par la surcharge par opération. Dans la boucle, un appel coûte ~11 ms au lieu de 4,5 ms mesurés
+> en rafale : avec des trous d'au moins 5 ms de travail CPU entre deux appels, le GPU redevient ~2x plus lent. Un thread de
+> maintien d'activité GPU bloque MPS (à ne pas refaire).
+>
+> **Fait (23/09/2026)** : forward du réseau à opérations partagées (masses de cartes calculées une fois pour les deux
+> côtés, projections clé/valeur de l'attention une fois pour les deux ranges, `arange` constant hors de l'appel) : 768 -> 605
+> opérations, 4,5 -> 3,1 ms par appel, sorties identiques à 7e-8 ; et paquets équilibrés d'au plus 36 états au lieu de 24
+> (un saut de 3x apparaît dès 48 états par appel). Sur les mêmes 50 flops : **2,73 s** sur flop neuf (médiane 2,68, p90 3,10,
+> max 3,98), **2,40 s** en répétition, exploitabilité du jeu du réseau inchangée (0,38 %).
 
 ---
 
