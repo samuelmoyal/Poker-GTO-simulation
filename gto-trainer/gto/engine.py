@@ -1,8 +1,7 @@
 """Hand engine: deals a heads-up spot, plays the GTO villain, grades the hero's decisions.
 
 Flop strategies come from the precomputed library. Turn and river are re-solved on the fly
-with ranges narrowed by the actions that were actually played (class-level weights, because the
-solver CLI only accepts hand classes such as `AKs:0.4`, not exact combos).
+with ranges narrowed, combo by combo, by the actions that were actually played.
 """
 import json
 import os
@@ -20,7 +19,7 @@ STREETS = ("flop", "turn", "river")
 # --------------------------------------------------------------------------- tree helpers
 
 def side_of(node) -> str:
-    """Player 0 is IP, player 1 is OOP in TexasSolver's dump."""
+    """Player 0 is IP, player 1 is OOP in the solved trees."""
     return "ip" if node["player"] == 0 else "oop"
 
 
@@ -190,7 +189,7 @@ class Trainer:
             self._set_msg("Chargement du flop depuis la bibliothèque…")
         else:
             canon_board = spots.random_canonical_flop()
-            self._set_msg("Nouveau flop : résolution en cours (~2 min)…")
+            self._set_msg("Nouveau flop : résolution en cours (~20 s)…")
         tree = spots.solve_flop(matchup, canon_board, on_progress=self._progress)
 
         suit_map = random_suit_map()  # canonical suits -> the suits shown to the player
@@ -258,16 +257,15 @@ class Trainer:
             used = set(h["board"]) | {c for combo in h["cards"].values() for c in (combo[:2], combo[2:])}
             card = random.choice([c for c in DECK if c not in used])
             board = h["board"] + [card]
-            classes = {s: ranges.narrow(h["reach"][s], board, keep=[h["cards"][s]]) for s in ("ip", "oop")}
+            narrowed = {s: ranges.narrow(h["reach"][s], board, keep=[h["cards"][s]]) for s in ("ip", "oop")}
             pot, stack = h["pot_start"], h["stack_start"]
         self._set_msg(f"Résolution du {street} ({''.join(board)})…")
-        tree = solver.solve(board, pot, stack, ranges.range_string(classes["ip"]), ranges.range_string(classes["oop"]),
-                            street, on_progress=self._progress)
+        tree = solver.solve(board, pot, stack, narrowed["ip"], narrowed["oop"], street, on_progress=self._progress)
         with self.lock:
             h["board"] = board
             h["street"] = street
             h["tree"] = h["node"] = tree
-            h["reach"] = {s: ranges.combo_weights(classes[s], board) for s in ("ip", "oop")}
+            h["reach"] = narrowed
             h["pending_deal"] = False
             h["contrib"] = {"ip": 0.0, "oop": 0.0}
             self._say("board", street=street, text=f"{street.capitalize()} : {card}")

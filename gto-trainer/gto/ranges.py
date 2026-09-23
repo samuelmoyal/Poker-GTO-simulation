@@ -1,4 +1,4 @@
-"""Preflop range files -> hand-class weights -> combos, and range strings for the solver."""
+"""Preflop range files -> hand-class weights -> combos, and the per-combo ranges handed to the solver."""
 import os
 import random
 
@@ -70,29 +70,19 @@ def sample_combo(weights: dict, rng=random) -> str:
 
 
 def narrow(reach: dict, board, keep=(), min_weight=None, floor=None) -> dict:
-    """Aggregate combo-level reach into class-level weights (all the solver CLI accepts).
+    """Combo-level range for the next street.
 
-    Each class gets the mean reach over its combos not blocked by `board`, normalised so the
-    largest class is 1.0. Classes of the hands in `keep` are floored so they stay in the range.
+    `reach` without the combos `board` blocks, scaled so the largest weight is 1, tiny weights dropped.  The combos
+    in `keep` (the players' actual hands) are floored so they stay in the range.
     """
     min_weight = config.RANGE_MIN_WEIGHT if min_weight is None else min_weight
     floor = config.HAND_FLOOR if floor is None else floor
     dead = set(board)
-    sums, counts = {}, {}
-    for combo, w in reach.items():
-        if not unblocked(combo, dead):
-            continue
-        cls = hand_class(combo)
-        sums[cls] = sums.get(cls, 0.0) + w
-    for cls in sums:
-        counts[cls] = sum(1 for c in class_combos(cls) if unblocked(c, dead))
-    out = {cls: sums[cls] / counts[cls] for cls in sums if counts[cls]}
+    out = {c: w for c, w in reach.items() if w > 0 and unblocked(c, dead)}
     top = max(out.values(), default=0.0)
     if top <= 0:
         return {}
-    out = {cls: w / top for cls, w in out.items()}
-    out = {cls: w for cls, w in out.items() if w >= min_weight}
+    out = {c: w / top for c, w in out.items() if w / top >= min_weight}
     for combo in keep:
-        cls = hand_class(combo)
-        out[cls] = max(out.get(cls, 0.0), floor)
+        out[combo] = max(out.get(combo, 0.0), floor)
     return out

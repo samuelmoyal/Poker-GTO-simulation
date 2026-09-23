@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
     if not os.path.exists(config.SOLVER_BIN):
-        sys.exit(f"console_solver introuvable: {config.SOLVER_BIN}")
+        sys.exit(f"solveur introuvable: {config.SOLVER_BIN}\n  -> cd tools/turn-labels && cargo build --release")
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://localhost:{args.port}"
     print(f"GTO Trainer sur {url}  (Ctrl-C pour arrêter)")

@@ -131,7 +131,7 @@
     <div class="panel">
       <details>
         <summary>À propos de la précision</summary>
-        <p class="note">Le flop vient d'une bibliothèque pré-résolue (~5 % d'exploitabilité). Turn et river sont résolus à la volée avec les ranges rétrécies par les actions jouées ; le solveur n'accepte que des poids par classe de main, donc c'est une approximation. Le solveur ne fournit que des fréquences, pas d'EV : ta décision est notée selon la fréquence GTO de l'action choisie.</p>
+        <p class="note">Le flop vient d'une bibliothèque pré-résolue (exploitabilité < 0,5 % du pot). Turn et river sont résolus à la volée avec les ranges rétrécies, combo par combo, par les actions jouées. Le solveur ne fournit que des fréquences, pas d'EV : ta décision est notée selon la fréquence GTO de l'action choisie.</p>
         <p class="note">Notes : ✅ ≥ 30 % · 🟡 10–30 % · 🟠 3–10 % · ❌ &lt; 3 %.</p>
         <button id="resetstats">Réinitialiser les stats</button>
       </details>

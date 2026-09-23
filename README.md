@@ -25,13 +25,13 @@ for the caveats and the other measurements. The resolver and the network are **n
 
 | Path | What |
 |---|---|
-| `gto-trainer/` | Web trainer (stdlib Python + vanilla JS). Uses TexasSolver for now. See its own README (French). |
+| `gto-trainer/` | Web trainer (stdlib Python + vanilla JS). Solves streets with the vendored postflop-solver (`street_tree`). See its own README (French). |
 | `model/gtonet/` | Python package: cards/evaluator/equity, label pipeline, `net_turn`, vector CFR, real-time resolver |
 | `model/scripts/` | Data generation, featurisation, training, evaluation, experiment runners |
 | `model/tests/` | `unittest` suite (35 tests) |
 | `model/checkpoints/` | The small trained nets (TINY, S2, SMALL); the 63 MB DOC nets are not versioned |
 | `tools/postflop-solver/` | Vendored Rust solver (AGPL-3.0, see `VENDORED.md`) |
-| `tools/turn-labels/` | Rust JSONL front-ends: `turn-labels`, `flop_lines`, `flop_lock` |
+| `tools/turn-labels/` | Rust JSONL front-ends: `turn-labels`, `flop_lines`, `flop_lock`, `street_tree` (the trainer's solver) |
 | `tools/boardlib/` | Rust library (C ABI, used through `ctypes`): 7-card strength, win tables, equity |
 | `bench/` | Micro-benchmarks and validation experiments |
 
@@ -49,7 +49,7 @@ Apple Silicon Mac (training and inference use PyTorch's `mps` backend), Python 3
 # 2. Python environment for the model track (the trainer itself needs nothing beyond the standard library)
 python3 -m venv model/.venv && model/.venv/bin/pip install numpy pyarrow torch
 
-# 3. TexasSolver (needed by the trainer, and for the preflop range files the model track reads).
+# 3. Preflop range files (the only thing still taken from TexasSolver; see "Planned" below).
 #    Download the macOS build of v0.2.0 from https://github.com/bupticybee/TexasSolver and unzip it as
 #    ./TexasSolver-v0.2.0-MacOs  (git-ignored; it is a third-party release with its own license).
 ```
@@ -71,16 +71,19 @@ cd model
 
 Generated data (`model/data`, caches, logs) is git-ignored and regenerable; the pipeline is resumable.
 
-## Planned: remove TexasSolver
+## Removing TexasSolver
 
-TexasSolver is a temporary dependency. Two things tie us to it, and both need handling:
+TexasSolver is no longer a solver dependency: the trainer solves every street with `postflop-solver`
+(`tools/turn-labels`' `street_tree`, 0.1–0.6 s per turn/river against 12–15 s, strategies within the native solver's own
+run-to-run noise on 8 turn/river spots; the only structural difference is that a re-raise leaving less than 15 % of the
+pot behind is an all-in). What is left:
 
-1. **The solver itself**, used by the trainer for live turn/river solves and the flop library. `postflop-solver` already does
-   everything the trainer needs, faster and with per-combo ranges and per-action EVs. Missing: an exporter that dumps a solved
-   street in the tree format `gto/engine.py` reads (a tree walk like `flop_lock`'s), then a swap in `gto/solver.py`, and a
-   parity check of strategies on a few spots (all-in rules differ between the two solvers).
-2. **Its data**: the preflop range files under `ranges/6max_range` (1483 files) that define every spot. They must be kept or
-   replaced before the folder can go; their provenance and licence need checking first.
+1. **Flop library**: the flops solved by TexasSolver are ignored by the trainer (new profile id); regenerate with
+   `gto-trainer/precompute.py` (about 16 s per flop). The model track still reads that old library as one of its two
+   flop sources (`gtonet/flopdump.py`, `states.py`); native flop solves (`gen_flops.py`) replace it.
+2. **Preflop range files**: `ranges/6max_range` (1483 files) still come from the TexasSolver release folder and define every
+   spot. They must be copied into the repository, or replaced, before the folder can go; their provenance and licence
+   need checking first.
 
 ## License
 
